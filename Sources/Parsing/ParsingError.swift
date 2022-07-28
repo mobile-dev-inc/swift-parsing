@@ -1,12 +1,32 @@
 import Foundation
 
-@usableFromInline
-enum ParsingError: Error {
-  case failed(String, Context)
-  case manyFailed([Error], Context)
-
+public struct ParsingError: Error {
   @usableFromInline
-  static func expectedInput(_ description: String, at remainingInput: Any) -> Self {
+  enum Variant {
+    case failed(String, Context)
+    case manyFailed([Error], Context)
+  }
+  
+  @usableFromInline
+  let variant: Variant
+  
+  @inlinable
+  static func failed(_ label: String, _ context: Context) -> Self {
+    Self(.failed(label, context))
+  }
+  
+  @inlinable
+  static func manyFailed(_ errors: [Error], _ context: Context) -> Self {
+    Self(.manyFailed(errors, context))
+  }
+  
+  @inlinable
+  init(_ variant: Variant) {
+    self.variant = variant
+  }
+  
+  @inlinable
+  public static func expectedInput(_ description: String, at remainingInput: Any) -> Self {
     .failed(
       summary: "unexpected input",
       label: "expected \(description)",
@@ -30,19 +50,21 @@ enum ParsingError: Error {
 
   @usableFromInline
   static func failed(summary: String, label: String = "", at remainingInput: Any) -> Self {
-    .failed(label, .init(remainingInput: remainingInput, debugDescription: summary))
+    Self(.failed(label, .init(remainingInput: remainingInput, debugDescription: summary)))
   }
 
   @usableFromInline
   static func failed(
     summary: String, label: String = "", from originalInput: Any, to remainingInput: Any
   ) -> Self {
-    .failed(
-      label,
-      .init(
-        originalInput: originalInput,
-        remainingInput: remainingInput,
-        debugDescription: summary
+    Self(
+      .failed(
+        label,
+        .init(
+          originalInput: originalInput,
+          remainingInput: remainingInput,
+          debugDescription: summary
+        )
       )
     )
   }
@@ -73,7 +95,7 @@ enum ParsingError: Error {
 
   @usableFromInline
   var context: Context {
-    switch self {
+    switch self.variant {
     case let .failed(_, context), let .manyFailed(_, context):
       return context
     }
@@ -83,16 +105,16 @@ enum ParsingError: Error {
   func flattened() -> Self {
     func flatten(_ depth: Int = 0) -> (Error) -> [(depth: Int, error: Error)] {
       { error in
-        switch error {
-        case let ParsingError.manyFailed(errors, _):
+        if let error = error as? ParsingError,
+           case let ParsingError.Variant.manyFailed(errors, _) = error.variant {
           return errors.flatMap(flatten(depth + 1))
-        default:
+        } else {
           return [(depth, error)]
         }
       }
     }
 
-    switch self {
+    switch self.variant {
     case .failed:
       return self
     case let .manyFailed(errors, context):
@@ -154,9 +176,8 @@ enum ParsingError: Error {
 }
 
 extension ParsingError: CustomDebugStringConvertible {
-  @usableFromInline
-  var debugDescription: String {
-    switch self.flattened() {
+  public var debugDescription: String {
+    switch self.flattened().variant {
     case let .failed(label, context):
       return format(labels: [label], context: context)
 
@@ -172,7 +193,7 @@ extension ParsingError: CustomDebugStringConvertible {
     func failed(_ error: Error) -> (String, Context)? {
       guard
         let error = error as? ParsingError,
-        case .failed(let label, let context) = error
+        case .failed(let label, let context) = error.variant
       else { return nil }
       return (label, context)
     }
@@ -333,7 +354,7 @@ func format(labels: [String], context: ParsingError.Context) -> String {
 
       let expectation: String
       if let error = context.underlyingError as? ParsingError,
-        case let .failed(elementLabel, elementContext) = error,
+      case let .failed(elementLabel, elementContext) = error.variant,
         let originalInput = normalize(elementContext.originalInput) as? Substring,
         let remainingInput = normalize(elementContext.remainingInput) as? Substring
       {

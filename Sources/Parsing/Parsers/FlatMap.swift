@@ -44,7 +44,11 @@ extension Parsers {
       let original = input
       do {
         return try self.transform(self.upstream.parse(&input)).parse(&input)
-      } catch let ParsingError.failed(reason, context) {
+      } catch {
+        guard let error = error as? ParsingError,
+              case let ParsingError.Variant.failed(reason, context) = error.variant else {
+          throw error
+        }
         throw ParsingError.failed(
           reason,
           .init(
