@@ -1,7 +1,7 @@
 import Foundation
 
 @usableFromInline
-enum ParsingError: Error {
+public enum ParsingError: Error {
   case failed(String, Context)
   case manyFailed([Error], Context)
 
